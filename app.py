@@ -55,6 +55,43 @@ DATABASE   = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'quickdone
 SCHEMA     = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'schema_and_seed.sql')
 SECRET_KEY = 'qd-secret-2026-dbms-foundations'
 
+def get_db_path():
+    """
+    Return the active SQLite database path.
+    - Localhost: returns the local quickdone.db directly.
+    - Vercel / serverless: ensures quickdone.db is copied to /tmp/quickdone.db
+      with explicit write permissions (0o666), avoiding read-only errors.
+    """
+    local_db = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'quickdone.db')
+    schema   = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'schema_and_seed.sql')
+
+    is_serverless = bool(
+        os.environ.get('VERCEL') or
+        os.environ.get('VERCEL_ENV') or
+        os.environ.get('AWS_LAMBDA_FUNCTION_NAME') or
+        not os.access(os.path.dirname(local_db), os.W_OK)
+    )
+
+    if not is_serverless:
+        return local_db
+
+    tmp_db = '/tmp/quickdone.db'
+    if not os.path.exists(tmp_db):
+        import shutil
+        if os.path.exists(local_db):
+            shutil.copyfile(local_db, tmp_db)
+        elif os.path.exists(schema):
+            with sqlite3.connect(tmp_db) as conn:
+                conn.execute('PRAGMA foreign_keys = ON')
+                with open(schema, 'r', encoding='utf-8') as f:
+                    conn.executescript(f.read())
+        try:
+            os.chmod(tmp_db, 0o666)
+        except Exception:
+            pass
+
+    return tmp_db
+
 # Admin credentials — Python-only; no admin database table (rule 0.4.4)
 ADMIN_USERNAME = 'admin'
 ADMIN_PASSWORD = 'admin'
@@ -93,7 +130,7 @@ def get_db():
     - PRAGMA foreign_keys = ON : enforced on EVERY connection (rule 0.4.2)
     """
     if 'db' not in g:
-        g.db = sqlite3.connect(DATABASE)
+        g.db = sqlite3.connect(get_db_path())
         g.db.row_factory = sqlite3.Row
         g.db.execute('PRAGMA foreign_keys = ON')
     return g.db
