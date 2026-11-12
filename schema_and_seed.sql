@@ -18,13 +18,14 @@ DROP TABLE IF EXISTS worker_badge;
 DROP TABLE IF EXISTS badge;
 DROP TABLE IF EXISTS availability;
 DROP TABLE IF EXISTS qualification;
+DROP TABLE IF EXISTS worker_portfolio;
 DROP TABLE IF EXISTS worker_service;
 DROP TABLE IF EXISTS category;
 DROP TABLE IF EXISTS worker;
 DROP TABLE IF EXISTS customer;
 
 -- ============================================================================
--- 1. TABLE DEFINITIONS (DDL) — ALL 10 ENTITIES
+-- 1. TABLE DEFINITIONS (DDL) — ALL 11 ENTITIES
 -- ============================================================================
 
 -- 1. CUSTOMER (Strong Entity)
@@ -50,6 +51,7 @@ CREATE TABLE worker (
     city             VARCHAR(100) NOT NULL,
     experience_years INTEGER      NOT NULL DEFAULT 0 CHECK (experience_years >= 0),
     bio              TEXT,
+    profile_image_url VARCHAR(500) NULL,
     registered_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     avg_rating       DECIMAL(3,2) NOT NULL DEFAULT 0.00 CHECK (avg_rating BETWEEN 0.00 AND 5.00),
     completed_jobs   INTEGER      NOT NULL DEFAULT 0 CHECK (completed_jobs >= 0)
@@ -151,6 +153,17 @@ CREATE TABLE review (
         ON DELETE CASCADE ON UPDATE CASCADE
 );
 
+-- 11. WORKER_PORTFOLIO (Entity linking WORKER to past job / work sample images)
+CREATE TABLE worker_portfolio (
+    portfolio_id     INTEGER PRIMARY KEY AUTOINCREMENT,
+    worker_id        INTEGER      NOT NULL,
+    image_url        VARCHAR(500) NOT NULL,
+    title            VARCHAR(150),
+    uploaded_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (worker_id) REFERENCES worker (worker_id)
+        ON DELETE CASCADE ON UPDATE CASCADE
+);
+
 -- ============================================================================
 -- 2. TRIGGERS & VIEW FOR DERIVED ATTRIBUTES (avg_rating & completed_jobs)
 -- ============================================================================
@@ -223,12 +236,12 @@ INSERT INTO customer (customer_id, first_name, last_name, email, phone, password
 (4, 'Tariq',   'Ismail',       'tariq.ismail@email.lk',    '077-9988776', 'hash_ti64', '105 Havelock Rd, Colombo 05',      '2026-04-25 16:40:00'),
 (5, 'Dilani',  'Jayawardena',  'dilani.j@email.lk',        '070-1122334', 'hash_dj55', '29 Nawala Rd, Rajagiriya',         '2026-05-10 08:50:00');
 
-INSERT INTO worker (worker_id, first_name, last_name, email, phone, password_hash, city, experience_years, bio, registered_at) VALUES
-(1, 'Kasun',   'Bandara',      'kasun.bandara@quickdone.lk',  '077-5501122', 'hash_kb1', 'Colombo',      8, 'NVQ Level 4 certified master electrician and smart-panel installer.', '2025-11-01 10:00:00'),
-(2, 'Chaminda','Rajapaksa',    'chaminda.r@quickdone.lk',     '071-6602233', 'hash_cr2', 'Nugegoda',     6, 'Residential and commercial plumbing specialist for leak & pump systems.', '2025-11-15 11:30:00'),
-(3, 'Suresh',  'Kumar',        'suresh.kumar@quickdone.lk',   '076-7703344', 'hash_sk3', 'Dehiwala',     11,'HVAC and inverter air-conditioner servicing & gas refilling technician.', '2025-12-05 09:45:00'),
-(4, 'Malithi', 'Gunawardena',  'malithi.g@quickdone.lk',      '077-8804455', 'hash_mg4', 'Rajagiriya',   4, 'Eco-friendly deep home cleaning and post-renovation sanitation lead.',   '2026-01-20 13:15:00'),
-(5, 'Nuwan',   'Dissanayake',  'nuwan.d@quickdone.lk',        '071-9905566', 'hash_nd5', 'Maharagama',   9, 'Custom teak furniture repair, door fitting, and architectural carpentry.', '2026-02-14 15:00:00');
+INSERT INTO worker (worker_id, first_name, last_name, email, phone, password_hash, city, experience_years, bio, profile_image_url, registered_at) VALUES
+(1, 'Kasun',   'Bandara',      'kasun.bandara@quickdone.lk',  '077-5501122', 'hash_kb1', 'Colombo',      8, 'NVQ Level 4 certified master electrician and smart-panel installer.', 'https://images.unsplash.com/photo-1540569014015-19a7be504e3a?w=400&q=80', '2025-11-01 10:00:00'),
+(2, 'Chaminda','Rajapaksa',    'chaminda.r@quickdone.lk',     '071-6602233', 'hash_cr2', 'Nugegoda',     6, 'Residential and commercial plumbing specialist for leak & pump systems.', 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&q=80', '2025-11-15 11:30:00'),
+(3, 'Suresh',  'Kumar',        'suresh.kumar@quickdone.lk',   '076-7703344', 'hash_sk3', 'Dehiwala',     11,'HVAC and inverter air-conditioner servicing & gas refilling technician.', 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400&q=80', '2025-12-05 09:45:00'),
+(4, 'Malithi', 'Gunawardena',  'malithi.g@quickdone.lk',      '077-8804455', 'hash_mg4', 'Rajagiriya',   4, 'Eco-friendly deep home cleaning and post-renovation sanitation lead.',   'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=400&q=80', '2026-01-20 13:15:00'),
+(5, 'Nuwan',   'Dissanayake',  'nuwan.d@quickdone.lk',        '071-9905566', 'hash_nd5', 'Maharagama',   9, 'Custom teak furniture repair, door fitting, and architectural carpentry.', 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=400&q=80', '2026-02-14 15:00:00');
 
 INSERT INTO category (category_id, name, description) VALUES
 (1, 'Electrical',     'Wiring, breaker panel upgrades, fault finding, and lighting installation'),
@@ -305,3 +318,13 @@ INSERT INTO review (review_id, booking_id, rating, comment, review_date) VALUES
 (6, 6, 5, 'Suresh brought digital manifold gauges and checked every AC unit thoroughly.',    '2026-07-20 17:10:00'),
 (7, 7, 5, 'Fixed the PCB relay instead of charging for a whole new board!',                  '2026-10-02 19:00:00'),
 (8, 8, 5, 'Spotless kitchen and living room shampooing. Looks brand new.',                   '2026-10-12 18:30:00');
+
+-- Insert Work Example / Portfolio Images (up to 5 per worker)
+INSERT INTO worker_portfolio (portfolio_id, worker_id, image_url, title, uploaded_at) VALUES
+(1, 1, 'https://images.unsplash.com/photo-1621905251189-08b45d6a269e?w=800&q=80', 'Main Breaker Panel Upgrade & Wiring', '2026-06-15 10:00:00'),
+(2, 1, 'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=800&q=80', 'Recessed Smart LED Lighting Project',   '2026-08-20 14:30:00'),
+(3, 2, 'https://images.unsplash.com/photo-1585704032915-c3400ca199e7?w=800&q=80', 'Concealed Bathroom Mixer Valve Fitting', '2026-07-15 11:20:00'),
+(4, 2, 'https://images.unsplash.com/photo-1504328345606-18bbc8c9d7d1?w=800&q=80', 'Overhead Water Tank Pump Installation',  '2026-09-20 16:45:00'),
+(5, 3, 'https://images.unsplash.com/photo-1569154941061-e231b4725ef1?w=800&q=80', 'Dual Inverter Split AC Chemical Wash',   '2026-07-25 09:15:00'),
+(6, 4, 'https://images.unsplash.com/photo-1581578731548-c64695cc6952?w=800&q=80', '3-Bedroom Apartment Deep Sanitization',  '2026-10-15 12:00:00'),
+(7, 5, 'https://images.unsplash.com/photo-1565008447742-97f6f38c985c?w=800&q=80', 'Solid Teak Custom Entrance Door & Lock', '2026-11-05 15:30:00');

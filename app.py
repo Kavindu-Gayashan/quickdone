@@ -266,6 +266,7 @@ def search_workers(name=None, city=None, category_id=None):
                  w.avg_rating,
                  w.completed_jobs,
                  w.bio,
+                 w.profile_image_url,
                  GROUP_CONCAT(DISTINCT c.name) AS service_names,
                  MIN(ws.hourly_rate)            AS min_rate,
                  MAX(ws.hourly_rate)            AS max_rate
@@ -294,6 +295,7 @@ def get_featured_workers(limit=6):
                  w.experience_years,
                  w.avg_rating,
                  w.completed_jobs,
+                 w.profile_image_url,
                  GROUP_CONCAT(DISTINCT c.name) AS service_names,
                  MIN(ws.hourly_rate)            AS min_rate
         FROM     worker w
@@ -313,11 +315,62 @@ def get_worker_profile(worker_id):
     db = get_db()
     return db.execute("""
         SELECT  worker_id, first_name, last_name, email, phone,
-                city, experience_years, bio,
+                city, experience_years, bio, profile_image_url,
                 avg_rating, completed_jobs, registered_at
         FROM    worker
         WHERE   worker_id = ?
     """, (worker_id,)).fetchone()
+
+
+def get_worker_portfolio(worker_id):
+    """
+    Retrieve all work example images for a worker (up to 5).
+    SQL: SELECT with WHERE on foreign key, ORDER BY portfolio_id
+    """
+    db = get_db()
+    return db.execute("""
+        SELECT  portfolio_id,
+                worker_id,
+                image_url,
+                title,
+                uploaded_at
+        FROM    worker_portfolio
+        WHERE   worker_id = ?
+        ORDER   BY portfolio_id ASC
+    """, (worker_id,)).fetchall()
+
+
+def add_portfolio_image(worker_id, image_url, title=None):
+    """
+    Add a work example image for a worker. Enforces maximum 5 images.
+    SQL: SELECT COUNT(*) pre-check, then INSERT INTO worker_portfolio
+    """
+    db = get_db()
+    count = db.execute("""
+        SELECT COUNT(*) FROM worker_portfolio WHERE worker_id = ?
+    """, (worker_id,)).fetchone()[0]
+    if count >= 5:
+        return False, 'Maximum 5 work example images allowed.'
+    db.execute("""
+        INSERT INTO worker_portfolio (worker_id, image_url, title)
+        VALUES (?, ?, ?)
+    """, (worker_id, image_url, title or None))
+    db.commit()
+    return True, 'Work example added successfully.'
+
+
+def delete_portfolio_image(portfolio_id, worker_id):
+    """
+    Remove a work example image owned by the worker.
+    SQL: DELETE with WHERE on portfolio_id and worker_id (ownership check)
+    """
+    db = get_db()
+    db.execute("""
+        DELETE FROM worker_portfolio
+        WHERE portfolio_id = ? AND worker_id = ?
+    """, (int(portfolio_id), int(worker_id)))
+    db.commit()
+    return True
 
 
 def get_worker_services(worker_id):
@@ -470,12 +523,14 @@ def create_customer(first_name, last_name, email, phone, pw_hash, address):
 
 def create_worker(first_name, last_name, email, phone, pw_hash,
                   city, experience_years, bio,
-                  services, qualifications, availabilities):
+                  services, qualifications, availabilities,
+                  profile_image_url=None, portfolio_items=None):
     """
-    Register a new worker with their services, qualifications and availability.
+    Register a new worker with their services, qualifications, availability,
+    optional profile image and up to 5 portfolio work examples.
     Uses an explicit TRANSACTION for atomicity across multiple inserts.
     SQL: BEGIN / COMMIT / ROLLBACK transaction; INSERT into worker, worker_service,
-         qualification, availability
+         qualification, availability, worker_portfolio
     """
     db = get_db()
     try:
@@ -485,10 +540,10 @@ def create_worker(first_name, last_name, email, phone, pw_hash,
         cur = db.execute("""
             INSERT INTO worker
                 (first_name, last_name, email, phone, password_hash,
-                 city, experience_years, bio)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                 city, experience_years, bio, profile_image_url)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (first_name, last_name, email, phone, pw_hash,
-              city, int(experience_years), bio or ''))
+              city, int(experience_years), bio or '', profile_image_url or None))
         worker_id = cur.lastrowid
 
         # INSERT associative entity worker_service (at least one required)
@@ -515,6 +570,16 @@ def create_worker(first_name, last_name, email, phone, pw_hash,
                         (worker_id, day_of_week, start_time, end_time)
                     VALUES (?, ?, ?, ?)
                 """, (worker_id, day, start_time, end_time))
+
+        # INSERT work example / portfolio images (optional, up to 5)
+        if portfolio_items:
+            for img_url, img_title in portfolio_items[:5]:
+                if img_url:
+                    db.execute("""
+                        INSERT INTO worker_portfolio
+                            (worker_id, image_url, title)
+                        VALUES (?, ?, ?)
+                    """, (worker_id, img_url, img_title or None))
 
         db.execute('COMMIT')   # -- TRANSACTION COMMIT --
         return worker_id
@@ -601,20 +666,21 @@ def add_availability(worker_id, day_of_week, start_time, end_time):
     db.commit()
 
 
-def update_worker_profile(worker_id, bio, phone, city, experience_years):
+def update_worker_profile(worker_id, bio, phone, city, experience_years, profile_image_url=None):
     """
-    Update editable fields of an existing worker profile.
+    Update editable fields of an existing worker profile including profile_image_url.
     SQL: UPDATE with WHERE on primary key
     """
     db = get_db()
     db.execute("""
         UPDATE  worker
-        SET     bio              = ?,
-                phone            = ?,
-                city             = ?,
-                experience_years = ?
+        SET     bio               = ?,
+                phone             = ?,
+                city              = ?,
+                experience_years  = ?,
+                profile_image_url = ?
         WHERE   worker_id = ?
-    """, (bio, phone, city, int(experience_years), worker_id))
+    """, (bio, phone, city, int(experience_years), profile_image_url or None, worker_id))
     db.commit()
 
 
@@ -1164,10 +1230,11 @@ def worker_profile(worker_id):
     availability   = get_worker_availability(worker_id)
     badges         = get_worker_badges(worker_id)
     reviews        = get_worker_reviews(worker_id)
+    portfolio      = get_worker_portfolio(worker_id)
     return render_template_string(WORKER_PROFILE_TEMPLATE,
         worker=worker, services=services,
         qualifications=qualifications, availability=availability,
-        badges=badges, reviews=reviews)
+        badges=badges, reviews=reviews, portfolio=portfolio)
 
 
 # ---- AUTH ----
@@ -1246,6 +1313,7 @@ def register_worker():
         cy  = request.form.get('city',             '').strip()
         exp = request.form.get('experience_years', '0').strip()
         bio = request.form.get('bio',              '').strip()
+        profile_img = request.form.get('profile_image_url', '').strip() or None
 
         # Collect checked categories and their rates
         services = []
@@ -1275,6 +1343,14 @@ def register_worker():
                 if st and et:
                     availabilities.append((day, st, et))
 
+        # Collect optional work example / portfolio images (up to 5)
+        portfolio_items = []
+        for i in range(1, 6):
+            p_url   = request.form.get(f'portfolio_url_{i}', '').strip()
+            p_title = request.form.get(f'portfolio_title_{i}', '').strip()
+            if p_url:
+                portfolio_items.append((p_url, p_title))
+
         if not all([fn, ln, em, ph, pw, cy]):
             flash('Please fill in all required fields.', 'error')
         elif not services:
@@ -1285,7 +1361,9 @@ def register_worker():
             try:
                 wid = create_worker(fn, ln, em, ph, generate_password_hash(pw),
                                     cy, exp or '0', bio,
-                                    services, qualifications, availabilities)
+                                    services, qualifications, availabilities,
+                                    profile_image_url=profile_img,
+                                    portfolio_items=portfolio_items)
                 session.update({'user_type': 'worker', 'user_id': wid,
                                 'user_name': f'{fn} {ln}'})
                 flash('Welcome to QuickDone! Your worker profile is live.', 'success')
@@ -1431,17 +1509,20 @@ def worker_profile_edit():
     services       = get_worker_services(wid)
     qualifications = get_worker_qualifications(wid)
     availability   = get_worker_availability(wid)
+    portfolio      = get_worker_portfolio(wid)
     all_categories = get_all_categories()
 
     if request.method == 'POST':
         action = request.form.get('action', '')
 
         if action == 'update_profile':
+            p_img = request.form.get('profile_image_url', '').strip() or None
             update_worker_profile(wid,
                 request.form.get('bio',              '').strip(),
                 request.form.get('phone',            '').strip(),
                 request.form.get('city',             '').strip(),
-                request.form.get('experience_years', '0').strip() or '0')
+                request.form.get('experience_years', '0').strip() or '0',
+                profile_image_url=p_img)
             flash('Profile updated.', 'success')
 
         elif action == 'add_service':
@@ -1490,12 +1571,27 @@ def worker_profile_edit():
             else:
                 flash('Select a day and time range.', 'error')
 
+        elif action == 'add_portfolio':
+            img_url = request.form.get('image_url', '').strip()
+            title   = request.form.get('title',     '').strip()
+            if img_url:
+                ok, msg = add_portfolio_image(wid, img_url, title)
+                flash(msg, 'success' if ok else 'error')
+            else:
+                flash('Image URL is required.', 'error')
+
+        elif action == 'remove_portfolio':
+            port_id = request.form.get('portfolio_id', '').strip()
+            if port_id:
+                delete_portfolio_image(port_id, wid)
+                flash('Work example removed.', 'success')
+
         return redirect(url_for('worker_profile_edit'))
 
     return render_template_string(WORKER_PROFILE_EDIT_TEMPLATE,
         worker=worker, services=services,
         qualifications=qualifications, availability=availability,
-        all_categories=all_categories)
+        portfolio=portfolio, all_categories=all_categories)
 
 
 # ---- ADMIN ----
@@ -2118,7 +2214,11 @@ HOME_TEMPLATE = _page('Find Skilled Workers', """
       {% for w in workers %}
       <div class="wc">
         <div class="wc-top">
+          {% if w['profile_image_url'] %}
+          <img src="{{ w['profile_image_url'] }}" alt="{{ w['first_name'] }}" class="av" style="object-fit:cover;">
+          {% else %}
           <div class="av">{{ get_initials(w['first_name'] + ' ' + w['last_name']) }}</div>
+          {% endif %}
           <div>
             <div class="wn">{{ w['first_name'] }} {{ w['last_name'] }}</div>
             <div class="wm">
@@ -2216,7 +2316,11 @@ WORKERS_TEMPLATE = _page('Find Workers', """
       {% for w in workers %}
       <div class="wc">
         <div class="wc-top">
+          {% if w['profile_image_url'] %}
+          <img src="{{ w['profile_image_url'] }}" alt="{{ w['first_name'] }}" class="av" style="object-fit:cover;">
+          {% else %}
           <div class="av">{{ get_initials(w['first_name'] + ' ' + w['last_name']) }}</div>
+          {% endif %}
           <div>
             <div class="wn">{{ w['first_name'] }} {{ w['last_name'] }}</div>
             <div class="wm">
@@ -2265,7 +2369,11 @@ WORKERS_TEMPLATE = _page('Find Workers', """
 WORKER_PROFILE_TEMPLATE = _page('{{ worker["first_name"] }} {{ worker["last_name"] }}', """
 <div class="prof-h">
   <div class="prof-hi">
+    {% if worker['profile_image_url'] %}
+    <img src="{{ worker['profile_image_url'] }}" alt="{{ worker['first_name'] }}" class="av av-xl" style="object-fit:cover;border:3px solid rgba(255,255,255,.25);">
+    {% else %}
     <div class="av av-xl">{{ get_initials(worker['first_name'] + ' ' + worker['last_name']) }}</div>
+    {% endif %}
     <div class="prof-info">
       <h1>{{ worker['first_name'] }} {{ worker['last_name'] }}</h1>
       <div class="prof-meta">
@@ -2301,6 +2409,31 @@ WORKER_PROFILE_TEMPLATE = _page('{{ worker["first_name"] }} {{ worker["last_name
         <p>{% if worker['bio'] %}{{ worker['bio'] }}{% else %}No bio provided.{% endif %}</p>
       </div>
     </div>
+
+    {% if portfolio %}
+    <div class="panel">
+      <div class="pan-h" style="display:flex;align-items:center;justify-content:space-between;">
+        <span>Work Examples &amp; Previous Projects</span>
+        <span class="ts-sm ts-m">{{ portfolio|length }} photo{{ 's' if portfolio|length != 1 else '' }}</span>
+      </div>
+      <div class="pan-b">
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px;">
+          {% for item in portfolio %}
+          <div style="border:1.5px solid var(--bd);border-radius:var(--r);overflow:hidden;background:#fff;transition:transform .2s;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='none'">
+            <a href="{{ item['image_url'] }}" target="_blank" rel="noopener" title="Click to view full image">
+              <img src="{{ item['image_url'] }}" alt="{{ item['title'] or 'Work Example' }}" style="width:100%;height:150px;object-fit:cover;">
+            </a>
+            {% if item['title'] %}
+            <div style="padding:10px 12px;font-size:13px;font-weight:600;color:var(--tp);line-height:1.35;">
+              {{ item['title'] }}
+            </div>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
 
     <div class="panel">
       <div class="pan-h">Services &amp; Rates</div>
@@ -2566,6 +2699,9 @@ REGISTER_WORKER_TEMPLATE = (
       </div>
       <div class="fg"><label class="fl-label">Bio (optional)</label>
         <textarea class="fta" name="bio" placeholder="Briefly describe your expertise and specialisations…" style="min-height:80px;"></textarea></div>
+      <div class="fg"><label class="fl-label">Profile Picture URL (optional)</label>
+        <input class="fi" type="url" name="profile_image_url" placeholder="https://images.unsplash.com/... or any image link">
+        <p class="f-hint">Provide an image link, or leave blank to display your name initials avatar.</p></div>
 
       <h3 style="font-size:16px;font-weight:700;margin:28px 0 16px;padding-bottom:12px;border-bottom:1.5px solid var(--bd);">Services &amp; Rates *</h3>
       <p class="f-hint" style="margin-bottom:14px;">Select the services you offer and enter your hourly rate in LKR for each.</p>
@@ -2601,6 +2737,23 @@ REGISTER_WORKER_TEMPLATE = (
         <input type="time" name="avail_start_{{ day }}" value="08:00" class="fi" style="max-width:120px;margin-bottom:0;">
         <span style="color:var(--ts);font-size:13px;">to</span>
         <input type="time" name="avail_end_{{ day }}" value="17:00" class="fi" style="max-width:120px;margin-bottom:0;">
+      </div>
+      {% endfor %}
+
+      <h3 style="font-size:16px;font-weight:700;margin:28px 0 16px;padding-bottom:12px;border-bottom:1.5px solid var(--bd);">Work Examples / Previous Jobs (optional, up to 5)</h3>
+      <p class="f-hint" style="margin-bottom:14px;">Add image links of previous jobs or completed projects to showcase on your profile.</p>
+      {% for i in [1,2,3,4,5] %}
+      <div style="border:1.5px solid var(--bd);border-radius:var(--r);padding:14px;margin-bottom:10px;">
+        <div class="fr">
+          <div class="fg" style="margin-bottom:0;">
+            <label class="fl-label">Work Photo {{ i }} URL</label>
+            <input class="fi" type="url" name="portfolio_url_{{ i }}" placeholder="https://...">
+          </div>
+          <div class="fg" style="margin-bottom:0;">
+            <label class="fl-label">Project Title / Caption</label>
+            <input class="fi" type="text" name="portfolio_title_{{ i }}" placeholder="e.g. Master Breaker Panel Upgrade">
+          </div>
+        </div>
       </div>
       {% endfor %}
 
@@ -3021,6 +3174,8 @@ WORKER_PROFILE_EDIT_TEMPLATE = _page('Edit My Profile', """
             <div class="fg"><label class="fl-label">Bio</label>
               <textarea class="fta" name="bio" style="min-height:80px;">{{ worker['bio'] or '' }}</textarea></div>
             <div>
+              <div class="fg"><label class="fl-label">Profile Picture URL (optional)</label>
+                <input class="fi" type="url" name="profile_image_url" value="{{ worker['profile_image_url'] or '' }}" placeholder="https://images.unsplash.com/..."></div>
               <div class="fg"><label class="fl-label">Phone</label>
                 <input class="fi" type="text" name="phone" value="{{ worker['phone'] }}"></div>
               <div class="fg"><label class="fl-label">City</label>
@@ -3031,6 +3186,59 @@ WORKER_PROFILE_EDIT_TEMPLATE = _page('Edit My Profile', """
           </div>
           <button class="btn btn-p btn-sm" type="submit">Save Profile</button>
         </form>
+      </div>
+    </div>
+
+    <!-- WORK EXAMPLES / PORTFOLIO -->
+    <div class="tw mb24">
+      <div class="tw-hd" style="display:flex;align-items:center;justify-content:space-between;">
+        <span class="tw-t">Work Examples / Portfolio (Max 5)</span>
+        <span class="ts-sm ts-m">{{ portfolio|length }} of 5 uploaded</span>
+      </div>
+      <div style="padding:20px;">
+        {% if portfolio %}
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px;margin-bottom:20px;">
+          {% for item in portfolio %}
+          <div style="border:1.5px solid var(--bd);border-radius:var(--r);overflow:hidden;background:#fff;display:flex;flex-direction:column;">
+            <a href="{{ item['image_url'] }}" target="_blank" rel="noopener">
+              <img src="{{ item['image_url'] }}" alt="{{ item['title'] or 'Work Example' }}" style="width:100%;height:120px;object-fit:cover;">
+            </a>
+            <div style="padding:10px;display:flex;flex-direction:column;flex:1;">
+              <div style="font-weight:600;font-size:13px;color:var(--tp);margin-bottom:8px;line-height:1.3;">{{ item['title'] or 'Work Sample' }}</div>
+              <form method="POST" style="margin-top:auto;" onsubmit="return confirm('Remove this work sample photo?')">
+                <input type="hidden" name="action" value="remove_portfolio">
+                <input type="hidden" name="portfolio_id" value="{{ item['portfolio_id'] }}">
+                <button class="btn btn-d btn-sm" type="submit" style="width:100%;padding:4px 8px;font-size:12px;">Remove</button>
+              </form>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p class="ts-sm ts-m" style="margin-bottom:16px;">You haven't added any work example photos yet.</p>
+        {% endif %}
+
+        {% if portfolio|length < 5 %}
+        <form method="POST" style="background:var(--bg);border:1.5px dashed var(--bd);border-radius:var(--r);padding:16px;">
+          <input type="hidden" name="action" value="add_portfolio">
+          <p style="font-size:13px;font-weight:700;color:var(--tp);margin-bottom:12px;">Add Work Example Photo ({{ 5 - portfolio|length }} slot{{ 's' if (5 - portfolio|length) != 1 else '' }} remaining)</p>
+          <div class="fr">
+            <div class="fg" style="margin-bottom:0;">
+              <label class="fl-label">Image URL *</label>
+              <input class="fi" type="url" name="image_url" required placeholder="https://images.unsplash.com/... or image link">
+            </div>
+            <div class="fg" style="margin-bottom:0;">
+              <label class="fl-label">Project Title / Caption (optional)</label>
+              <input class="fi" type="text" name="title" placeholder="e.g. Master Breaker Panel Upgrade">
+            </div>
+          </div>
+          <button class="btn btn-p btn-sm" type="submit" style="margin-top:12px;">+ Add Work Example</button>
+        </form>
+        {% else %}
+        <div style="padding:12px 16px;background:var(--m100);border-radius:var(--r);color:var(--g900);font-size:13px;font-weight:600;">
+          ✓ You have reached the maximum of 5 work example photos. Remove an existing image above to add a new one.
+        </div>
+        {% endif %}
       </div>
     </div>
 
