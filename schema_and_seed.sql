@@ -1,9 +1,5 @@
--- ============================================================================
--- QUICKDONE SERVICE MARKETPLACE — DATABASE SCHEMA, TRIGGERS & SAMPLE DATA
--- File: schema_and_seed.sql
--- Compatible with: SQLite 3 (and standard ANSI SQL / PostgreSQL / MySQL)
--- Matches the 10-Entity QuickDone ER Diagram (Chen & Crow's Foot Notations)
--- ============================================================================
+-- QuickDone database schema and sample data
+
 
 PRAGMA foreign_keys = ON;
 
@@ -24,11 +20,9 @@ DROP TABLE IF EXISTS category;
 DROP TABLE IF EXISTS worker;
 DROP TABLE IF EXISTS customer;
 
--- ============================================================================
--- 1. TABLE DEFINITIONS (DDL) — ALL 11 ENTITIES
--- ============================================================================
+-- Tables
 
--- 1. CUSTOMER (Strong Entity)
+-- Customer
 CREATE TABLE customer (
     customer_id      INTEGER PRIMARY KEY AUTOINCREMENT,
     first_name       VARCHAR(100) NOT NULL,
@@ -40,7 +34,7 @@ CREATE TABLE customer (
     registered_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- 2. WORKER (Strong Entity; includes derived attributes avg_rating & completed_jobs)
+-- Worker
 CREATE TABLE worker (
     worker_id        INTEGER PRIMARY KEY AUTOINCREMENT,
     first_name       VARCHAR(100) NOT NULL,
@@ -57,14 +51,14 @@ CREATE TABLE worker (
     completed_jobs   INTEGER      NOT NULL DEFAULT 0 CHECK (completed_jobs >= 0)
 );
 
--- 3. CATEGORY (Strong Entity)
+-- Service category
 CREATE TABLE category (
     category_id      INTEGER PRIMARY KEY AUTOINCREMENT,
     name             VARCHAR(100) NOT NULL UNIQUE,
     description      VARCHAR(500) NOT NULL
 );
 
--- 4. WORKER_SERVICE (Associative Entity linking WORKER and CATEGORY)
+-- Worker services and hourly rates
 CREATE TABLE worker_service (
     worker_id        INTEGER        NOT NULL,
     category_id      INTEGER        NOT NULL,
@@ -76,7 +70,7 @@ CREATE TABLE worker_service (
         ON DELETE RESTRICT ON UPDATE CASCADE
 );
 
--- 5. QUALIFICATION (Weak Entity dependent on WORKER; partial key = qualification_no)
+-- Worker qualifications
 CREATE TABLE qualification (
     worker_id        INTEGER      NOT NULL,
     qualification_no INTEGER      NOT NULL CHECK (qualification_no > 0),
@@ -88,7 +82,7 @@ CREATE TABLE qualification (
         ON DELETE CASCADE ON UPDATE CASCADE
 );
 
--- 6. AVAILABILITY (Weak Entity dependent on WORKER; partial key = day_of_week, start_time)
+-- Worker weekly availability
 CREATE TABLE availability (
     worker_id        INTEGER     NOT NULL,
     day_of_week      VARCHAR(15) NOT NULL CHECK (day_of_week IN (
@@ -102,14 +96,14 @@ CREATE TABLE availability (
         ON DELETE CASCADE ON UPDATE CASCADE
 );
 
--- 7. BADGE (Strong Entity: achievement tiers based on completed_jobs)
+-- Badges
 CREATE TABLE badge (
     badge_id          INTEGER PRIMARY KEY AUTOINCREMENT,
     name              VARCHAR(100) NOT NULL UNIQUE,
     min_jobs_required INTEGER      NOT NULL CHECK (min_jobs_required >= 0)
 );
 
--- 8. WORKER_BADGE (Associative Entity linking WORKER and BADGE)
+-- Worker badges
 CREATE TABLE worker_badge (
     worker_id        INTEGER NOT NULL,
     badge_id         INTEGER NOT NULL,
@@ -121,7 +115,7 @@ CREATE TABLE worker_badge (
         ON DELETE CASCADE ON UPDATE CASCADE
 );
 
--- 9. BOOKING (Strong Entity; uses Composite FK (worker_id, category_id) -> WORKER_SERVICE)
+-- Bookings
 CREATE TABLE booking (
     booking_id       INTEGER PRIMARY KEY AUTOINCREMENT,
     customer_id      INTEGER        NOT NULL,
@@ -142,7 +136,7 @@ CREATE TABLE booking (
         ON DELETE RESTRICT ON UPDATE CASCADE
 );
 
--- 10. REVIEW (Strong Entity; 1:0..1 with BOOKING enforced by UNIQUE booking_id FK)
+-- Booking reviews
 CREATE TABLE review (
     review_id        INTEGER PRIMARY KEY AUTOINCREMENT,
     booking_id       INTEGER  NOT NULL UNIQUE,
@@ -153,7 +147,7 @@ CREATE TABLE review (
         ON DELETE CASCADE ON UPDATE CASCADE
 );
 
--- 11. WORKER_PORTFOLIO (Entity linking WORKER to past job / work sample images)
+-- Worker portfolio images
 CREATE TABLE worker_portfolio (
     portfolio_id     INTEGER PRIMARY KEY AUTOINCREMENT,
     worker_id        INTEGER      NOT NULL,
@@ -164,11 +158,9 @@ CREATE TABLE worker_portfolio (
         ON DELETE CASCADE ON UPDATE CASCADE
 );
 
--- ============================================================================
--- 2. TRIGGERS & VIEW FOR DERIVED ATTRIBUTES (avg_rating & completed_jobs)
--- ============================================================================
+-- Triggers and views
 
--- Trigger 1: Recalculate worker.completed_jobs when a booking status is updated
+-- Update completed_jobs when booking status changes to COMPLETED
 CREATE TRIGGER trg_update_worker_jobs_on_complete
 AFTER UPDATE OF status ON booking
 BEGIN
@@ -182,7 +174,7 @@ BEGIN
     WHERE worker_id = NEW.worker_id;
 END;
 
--- Trigger 2: Recalculate worker.completed_jobs when a completed booking is inserted
+-- Update completed_jobs on direct insert of a completed booking
 CREATE TRIGGER trg_update_worker_jobs_on_insert
 AFTER INSERT ON booking
 WHEN NEW.status = 'COMPLETED'
@@ -197,7 +189,7 @@ BEGIN
     WHERE worker_id = NEW.worker_id;
 END;
 
--- Trigger 3: Recalculate worker.avg_rating when a review is inserted
+-- Recalculate avg_rating when a review is added
 CREATE TRIGGER trg_update_worker_rating_on_review
 AFTER INSERT ON review
 BEGIN
@@ -211,7 +203,7 @@ BEGIN
     WHERE worker_id = (SELECT worker_id FROM booking WHERE booking_id = NEW.booking_id);
 END;
 
--- View: Live verification view comparing stored vs. dynamically derived worker metrics
+-- View for dynamically calculated worker stats
 CREATE VIEW v_worker_derived_stats AS
 SELECT
     w.worker_id,
@@ -225,9 +217,7 @@ LEFT JOIN booking b ON b.worker_id = w.worker_id
 LEFT JOIN review  r ON r.booking_id = b.booking_id
 GROUP BY w.worker_id;
 
--- ============================================================================
--- 3. SAMPLE DATA (DML) — REALISTIC SEED DATA ACROSS ALL 10 TABLES
--- ============================================================================
+-- Seed data
 
 INSERT INTO customer (customer_id, first_name, last_name, email, phone, password_hash, address, registered_at) VALUES
 (1, 'Amaya',   'Perera',       'amaya.perera@email.lk',    '077-2345678', 'hash_ap91', '42 Flower Rd, Colombo 07',         '2026-01-12 09:15:00'),
@@ -288,14 +278,14 @@ INSERT INTO badge (badge_id, name, min_jobs_required) VALUES
 (2, 'Expert',     2),
 (3, 'Master',     3);
 
--- Award initial subset of badges (leaving some newly eligible badges for the Badge Audit query!)
+-- Badges awarded to workers
 INSERT INTO worker_badge (worker_id, badge_id, awarded_date) VALUES
 (1, 1, '2026-06-15'),
 (1, 2, '2026-08-20'),
 (2, 1, '2026-07-10'),
 (3, 1, '2026-07-22');
 
--- Insert Bookings (triggers automatically update worker.completed_jobs!)
+-- Bookings
 INSERT INTO booking (booking_id, customer_id, worker_id, category_id, job_description, job_address, scheduled_start, status, agreed_rate, created_at, completed_at) VALUES
 (1, 1, 1, 1, 'Replace 3-phase main RCB breaker and fix kitchen socket trip', '42 Flower Rd, Colombo 07',      '2026-06-10 09:30:00', 'COMPLETED',   2500.00, '2026-06-08 14:00:00', '2026-06-10 12:00:00'),
 (2, 2, 1, 1, 'Install surge protector and 6 LED recessed ceiling lights',    '18 Galle Rd, Dehiwala',         '2026-08-14 10:00:00', 'COMPLETED',   2500.00, '2026-08-12 11:20:00', '2026-08-14 13:30:00'),
@@ -308,7 +298,7 @@ INSERT INTO booking (booking_id, customer_id, worker_id, category_id, job_descri
 (9, 4, 5, 5, 'Refit warped mahogany main entrance door & deadbolt lock',     '105 Havelock Rd, Colombo 05',   '2026-11-11 09:00:00', 'CONFIRMED',   2600.00, '2026-11-08 17:15:00', NULL),
 (10,5, 1, 1, 'Inspect EV home wall-charger wiring and load balance',         '29 Nawala Rd, Rajagiriya',      '2026-11-12 10:00:00', 'PENDING',     2500.00, '2026-11-09 09:00:00', NULL);
 
--- Insert Reviews (triggers automatically recalculate worker.avg_rating!)
+-- Reviews
 INSERT INTO review (review_id, booking_id, rating, comment, review_date) VALUES
 (1, 1, 5, 'Kasun diagnosed the breaker fault in 10 minutes and neatened the entire DB box.', '2026-06-10 18:00:00'),
 (2, 2, 5, 'Very punctual and clean ceiling light installation. Highly recommended.',         '2026-08-14 19:20:00'),
@@ -319,7 +309,7 @@ INSERT INTO review (review_id, booking_id, rating, comment, review_date) VALUES
 (7, 7, 5, 'Fixed the PCB relay instead of charging for a whole new board!',                  '2026-10-02 19:00:00'),
 (8, 8, 5, 'Spotless kitchen and living room shampooing. Looks brand new.',                   '2026-10-12 18:30:00');
 
--- Insert Work Example / Portfolio Images (up to 5 per worker)
+-- Portfolio images
 INSERT INTO worker_portfolio (portfolio_id, worker_id, image_url, title, uploaded_at) VALUES
 (1, 1, 'https://images.unsplash.com/photo-1621905251189-08b45d6a269e?w=800&q=80', 'Main Breaker Panel Upgrade & Wiring', '2026-06-15 10:00:00'),
 (2, 1, 'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=800&q=80', 'Recessed Smart LED Lighting Project',   '2026-08-20 14:30:00'),

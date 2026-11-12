@@ -1,56 +1,10 @@
-# ============================================================
-# QUICKDONE — DATABASE QUERIES & SQL DEMONSTRATION LAYER
-# File: queries.py
-# ============================================================
-#
-# VIVA QUICK-REFERENCE OF SQL CONCEPTS DEMONSTRATED IN THIS FILE:
-# ----------------------------------------------------------------------------
-# 1. SELECT, INSERT, UPDATE, DELETE:
-#    - SELECT: Used in all retrieval functions with explicit column projections
-#    - INSERT: Customer & worker account creation, bookings, reviews, portfolio
-#    - UPDATE: Worker profile updates, booking status workflow
-#    - DELETE: remove_worker_service (with pre-check), delete_portfolio_image
-#
-# 2. JOINS:
-#    - INNER JOIN: search_workers, get_featured_workers, get_worker_reviews,
-#                  get_booking_detail, get_all_bookings_admin (4-table join)
-#    - LEFT JOIN:  get_category_worker_counts (keeps categories with 0 workers),
-#                  get_customer_bookings (keeps bookings with or without reviews),
-#                  get_all_workers_admin
-#
-# 3. GROUP BY & HAVING:
-#    - GROUP BY:   get_category_worker_counts, search_workers, get_all_workers_admin
-#    - HAVING:     get_admin_dashboard_stats (popular_categories with >= 1 worker)
-#
-# 4. AGGREGATE FUNCTIONS:
-#    - COUNT, AVG, MIN, MAX, GROUP_CONCAT, COALESCE, ROUND
-#
-# 5. SUBQUERIES:
-#    - NOT EXISTS subquery: award_eligible_badges (prevents duplicate awards)
-#    - Scalar subquery:     add_qualification (computes next qualification_no)
-#    - IN subquery:         top_workers in get_admin_dashboard_stats
-#
-# 6. TRANSACTIONS (ACID):
-#    - create_worker: BEGIN / COMMIT / ROLLBACK across 4 related tables
-#
-# 7. TRIGGERS & VIEWS:
-#    - Triggers trg_update_worker_jobs_on_complete & trg_update_worker_rating_on_review
-#      execute automatically inside SQLite on status update and review insert.
-#    - View v_worker_derived_stats is queried in get_view_worker_stats() for auditing.
-# ============================================================
-
 from db import get_db
 
 
-# ============================================================
-# 1. CATEGORIES & WORKER DISCOVERY
-# ============================================================
+# Categories and workers
 
 def get_all_categories():
-    """
-    Retrieve all service categories.
-    SQL: SELECT with ORDER BY
-    """
+    """Fetch all service categories ordered by name."""
     db = get_db()
     return db.execute("""
         SELECT  category_id,
@@ -62,13 +16,9 @@ def get_all_categories():
 
 
 def get_category_worker_counts():
-    """
-    Retrieve categories with a live count of workers offering each service.
-    SQL: SELECT, LEFT JOIN, GROUP BY, COUNT aggregate
-    """
+    """Fetch all categories with the count of active workers in each."""
     db = get_db()
     return db.execute("""
-        -- LEFT JOIN keeps categories that have zero workers
         SELECT   c.category_id,
                  c.name,
                  c.description,
@@ -81,12 +31,7 @@ def get_category_worker_counts():
 
 
 def search_workers(name=None, city=None, category_id=None):
-    """
-    Search workers with optional filters for name, city and category.
-    WHERE clause built dynamically in Python; only values are parameterised.
-    SQL: SELECT, INNER JOIN, optional WHERE, GROUP BY, ORDER BY,
-         GROUP_CONCAT, MIN/MAX aggregates
-    """
+    """Search workers with optional filters for name, city, and category."""
     db     = get_db()
     conds  = ['1=1']
     params = []
@@ -126,10 +71,7 @@ def search_workers(name=None, city=None, category_id=None):
 
 
 def get_featured_workers(limit=6):
-    """
-    Retrieve top-rated workers for homepage display.
-    SQL: SELECT, INNER JOIN, GROUP BY, ORDER BY, LIMIT
-    """
+    """Fetch top-rated workers for homepage display."""
     db = get_db()
     return db.execute("""
         SELECT   w.worker_id,
@@ -151,15 +93,10 @@ def get_featured_workers(limit=6):
     """, (limit,)).fetchall()
 
 
-# ============================================================
-# 2. WORKER PROFILE, SERVICES, QUALIFICATIONS & PORTFOLIO
-# ============================================================
+# Worker profile, services, and portfolio
 
 def get_worker_profile(worker_id):
-    """
-    Retrieve a single worker's full profile row.
-    SQL: SELECT with WHERE on primary key
-    """
+    """Fetch worker profile details by worker ID."""
     db = get_db()
     return db.execute("""
         SELECT  worker_id, first_name, last_name, email, phone,
@@ -171,10 +108,7 @@ def get_worker_profile(worker_id):
 
 
 def get_worker_services(worker_id):
-    """
-    Retrieve all services and hourly rates offered by a worker.
-    SQL: SELECT, INNER JOIN worker_service and category, WHERE, ORDER BY
-    """
+    """Fetch all services and hourly rates offered by aff worker."""
     db = get_db()
     return db.execute("""
         SELECT  ws.worker_id,
@@ -190,10 +124,7 @@ def get_worker_services(worker_id):
 
 
 def get_worker_qualifications(worker_id):
-    """
-    Retrieve a worker's qualifications.
-    SQL: SELECT with WHERE, ORDER BY (composite primary key column)
-    """
+    """Fetch qualifications for a worker."""
     db = get_db()
     return db.execute("""
         SELECT  qualification_no,
@@ -207,11 +138,7 @@ def get_worker_qualifications(worker_id):
 
 
 def get_worker_availability(worker_id):
-    """
-    Retrieve a worker's weekly recurring availability slots.
-    Orders logically Monday through Sunday using a SQL CASE expression.
-    SQL: SELECT with WHERE, ORDER BY CASE expression
-    """
+    """Fetch weekly recurring availability slots for a worker."""
     db = get_db()
     return db.execute("""
         SELECT  day_of_week,
@@ -235,10 +162,7 @@ def get_worker_availability(worker_id):
 
 
 def get_worker_badges(worker_id):
-    """
-    Retrieve all badges awarded to a worker.
-    SQL: SELECT, INNER JOIN worker_badge and badge, WHERE, ORDER BY
-    """
+    """Fetch all badges awarded to a worker."""
     db = get_db()
     return db.execute("""
         SELECT  b.badge_id,
@@ -253,14 +177,9 @@ def get_worker_badges(worker_id):
 
 
 def get_worker_reviews(worker_id):
-    """
-    Retrieve all customer reviews for a worker, traversing through bookings.
-    SQL: SELECT, INNER JOIN across review, booking, customer and category;
-         WHERE on worker_id, ORDER BY review_date DESC
-    """
+    """Fetch all customer reviews for a worker."""
     db = get_db()
     return db.execute("""
-        -- 4-table INNER JOIN connecting review to its customer & category
         SELECT   r.review_id,
                  r.rating,
                  r.comment,
@@ -278,10 +197,7 @@ def get_worker_reviews(worker_id):
 
 
 def get_worker_portfolio(worker_id):
-    """
-    Retrieve all work example / portfolio images for a worker (up to 5).
-    SQL: SELECT with WHERE on foreign key, ORDER BY portfolio_id
-    """
+    """Fetch portfolio work samples for a worker."""
     db = get_db()
     return db.execute("""
         SELECT  portfolio_id,
@@ -296,10 +212,7 @@ def get_worker_portfolio(worker_id):
 
 
 def add_portfolio_image(worker_id, image_url, title=None):
-    """
-    Add a work example image for a worker. Enforces maximum 5 images.
-    SQL: SELECT COUNT(*) pre-check, then INSERT INTO worker_portfolio
-    """
+    """Add a work example image for a worker (up to 5 allowed)."""
     db = get_db()
     count = db.execute("""
         SELECT COUNT(*) FROM worker_portfolio WHERE worker_id = ?
@@ -315,10 +228,7 @@ def add_portfolio_image(worker_id, image_url, title=None):
 
 
 def delete_portfolio_image(portfolio_id, worker_id):
-    """
-    Remove a work example image owned by the worker.
-    SQL: DELETE with WHERE on portfolio_id and worker_id (ownership check)
-    """
+    """Delete a portfolio image belonging to a worker."""
     db = get_db()
     db.execute("""
         DELETE FROM worker_portfolio
@@ -328,12 +238,10 @@ def delete_portfolio_image(portfolio_id, worker_id):
     return True
 
 
-# ============================================================
-# 3. AUTHENTICATION & REGISTRATION
-# ============================================================
+# Authentication and registration
 
 def find_customer_by_email(email):
-    """Look up a customer account by email. SQL: SELECT with WHERE on UNIQUE column"""
+    """Look up a customer account by email."""
     db = get_db()
     return db.execute("""
         SELECT customer_id, first_name, last_name, email, phone, password_hash, address
@@ -343,7 +251,7 @@ def find_customer_by_email(email):
 
 
 def find_worker_by_email(email):
-    """Look up a worker account by email. SQL: SELECT with WHERE on UNIQUE column"""
+    """Look up a worker account by email."""
     db = get_db()
     return db.execute("""
         SELECT worker_id, first_name, last_name, email, phone, password_hash,
@@ -354,10 +262,7 @@ def find_worker_by_email(email):
 
 
 def create_customer(first_name, last_name, email, phone, pw_hash, address):
-    """
-    Register a new customer.
-    SQL: INSERT INTO customer (all values parameterised)
-    """
+    """Register a new customer account."""
     db = get_db()
     cur = db.execute("""
         INSERT INTO customer
@@ -372,18 +277,11 @@ def create_worker(first_name, last_name, email, phone, pw_hash,
                   city, experience_years, bio,
                   services, qualifications, availabilities,
                   profile_image_url=None, portfolio_items=None):
-    """
-    Register a new worker with their services, qualifications, availability,
-    optional profile image and up to 5 portfolio work examples.
-    Uses an explicit TRANSACTION for atomicity across multiple inserts.
-    SQL: BEGIN / COMMIT / ROLLBACK transaction; INSERT into worker, worker_service,
-         qualification, availability, worker_portfolio
-    """
+    """Register a new worker with initial services, qualifications, and availability."""
     db = get_db()
     try:
-        db.execute('BEGIN')  # -- TRANSACTION START --
+        db.execute('BEGIN')
 
-        # INSERT parent entity first
         cur = db.execute("""
             INSERT INTO worker
                 (first_name, last_name, email, phone, password_hash,
@@ -393,14 +291,12 @@ def create_worker(first_name, last_name, email, phone, pw_hash,
               city, int(experience_years), bio or '', profile_image_url or None))
         worker_id = cur.lastrowid
 
-        # INSERT associative entity worker_service (at least one required)
         for category_id, hourly_rate in services:
             db.execute("""
                 INSERT INTO worker_service (worker_id, category_id, hourly_rate)
                 VALUES (?, ?, ?)
             """, (worker_id, int(category_id), float(hourly_rate)))
 
-        # INSERT weak entity qualification (optional; partial key computed manually)
         for idx, (title, institution, year) in enumerate(qualifications, start=1):
             if title and institution and year:
                 db.execute("""
@@ -409,7 +305,6 @@ def create_worker(first_name, last_name, email, phone, pw_hash,
                     VALUES (?, ?, ?, ?, ?)
                 """, (worker_id, idx, title, institution, int(year)))
 
-        # INSERT weak entity availability (optional)
         for day, start_time, end_time in availabilities:
             if day and start_time and end_time:
                 db.execute("""
@@ -418,7 +313,6 @@ def create_worker(first_name, last_name, email, phone, pw_hash,
                     VALUES (?, ?, ?, ?)
                 """, (worker_id, day, start_time, end_time))
 
-        # INSERT work example / portfolio images (optional, up to 5)
         if portfolio_items:
             for img_url, img_title in portfolio_items[:5]:
                 if img_url:
@@ -428,19 +322,16 @@ def create_worker(first_name, last_name, email, phone, pw_hash,
                         VALUES (?, ?, ?)
                     """, (worker_id, img_url, img_title or None))
 
-        db.execute('COMMIT')   # -- TRANSACTION COMMIT --
+        db.execute('COMMIT')
         return worker_id
 
     except Exception:
-        db.execute('ROLLBACK')  # -- TRANSACTION ROLLBACK on error --
+        db.execute('ROLLBACK')
         raise
 
 
 def add_worker_service(worker_id, category_id, hourly_rate):
-    """
-    Add a new service offering for an existing worker.
-    SQL: INSERT into worker_service (composite primary key)
-    """
+    """Add a service offering for an existing worker."""
     db = get_db()
     db.execute("""
         INSERT INTO worker_service (worker_id, category_id, hourly_rate)
@@ -450,13 +341,8 @@ def add_worker_service(worker_id, category_id, hourly_rate):
 
 
 def remove_worker_service(worker_id, category_id):
-    """
-    Remove a service offering (DELETE demonstration).
-    Business rule: Cannot delete if active bookings reference this service.
-    SQL: DELETE with WHERE; active-booking check prevents FK violation.
-    """
+    """Remove a service offering if there are no active bookings referencing it."""
     db = get_db()
-    # Pre-check: count active bookings for this worker/category pair
     active = db.execute("""
         SELECT  COUNT(*)
         FROM    booking
@@ -466,9 +352,8 @@ def remove_worker_service(worker_id, category_id):
     """, (worker_id, int(category_id))).fetchone()[0]
 
     if active > 0:
-        return False   # Cannot delete — has active bookings
+        return False
 
-    # -- DELETE: removes the row from worker_service --
     db.execute("""
         DELETE FROM worker_service
         WHERE  worker_id   = ?
@@ -479,11 +364,7 @@ def remove_worker_service(worker_id, category_id):
 
 
 def add_qualification(worker_id, title, institution, year_obtained):
-    """
-    Add a qualification for an existing worker.
-    Computes the next qualification_no using a MAX subquery (partial key).
-    SQL: INSERT with partial key derived from MAX aggregate subquery
-    """
+    """Add a qualification for an existing worker."""
     db = get_db()
     next_no = db.execute("""
         SELECT  COALESCE(MAX(qualification_no), 0) + 1
@@ -500,10 +381,7 @@ def add_qualification(worker_id, title, institution, year_obtained):
 
 
 def add_availability(worker_id, day_of_week, start_time, end_time):
-    """
-    Add or replace a weekly availability slot.
-    SQL: INSERT OR REPLACE (upsert using composite primary key)
-    """
+    """Add or update a weekly availability slot for a worker."""
     db = get_db()
     db.execute("""
         INSERT OR REPLACE INTO availability
@@ -514,10 +392,7 @@ def add_availability(worker_id, day_of_week, start_time, end_time):
 
 
 def update_worker_profile(worker_id, bio, phone, city, experience_years, profile_image_url=None):
-    """
-    Update editable fields of an existing worker profile including profile_image_url.
-    SQL: UPDATE with WHERE on primary key
-    """
+    """Update editable fields of a worker profile."""
     db = get_db()
     db.execute("""
         UPDATE  worker
@@ -531,15 +406,10 @@ def update_worker_profile(worker_id, bio, phone, city, experience_years, profile
     db.commit()
 
 
-# ============================================================
-# 4. BOOKINGS (CUSTOMER & WORKER)
-# ============================================================
+# Bookings
 
 def get_worker_service_rate(worker_id, category_id):
-    """
-    Look up the hourly rate for a specific worker/category pair.
-    SQL: SELECT with WHERE on composite primary key
-    """
+    """Look up the hourly rate for a worker in a specific category."""
     db = get_db()
     row = db.execute("""
         SELECT  hourly_rate
@@ -552,11 +422,7 @@ def get_worker_service_rate(worker_id, category_id):
 
 def create_booking(customer_id, worker_id, category_id,
                    job_description, job_address, scheduled_start, agreed_rate):
-    """
-    Create a new service booking in PENDING status.
-    Enforces composite foreign key (worker_id, category_id) -> worker_service.
-    SQL: INSERT INTO booking (status defaults to PENDING per schema CHECK)
-    """
+    """Create a new service booking in PENDING status."""
     db = get_db()
     cur = db.execute("""
         INSERT INTO booking
@@ -571,14 +437,9 @@ def create_booking(customer_id, worker_id, category_id,
 
 
 def get_customer_bookings(customer_id):
-    """
-    Retrieve all bookings made by a specific customer, including review status.
-    SQL: SELECT, INNER JOIN on worker & category, LEFT JOIN on review,
-         WHERE on customer_id, ORDER BY created_at DESC
-    """
+    """Fetch all bookings made by a customer, along with review status."""
     db = get_db()
     return db.execute("""
-        -- LEFT JOIN review to determine whether customer already reviewed this booking
         SELECT   b.booking_id,
                  b.worker_id,
                  b.category_id,
@@ -604,10 +465,7 @@ def get_customer_bookings(customer_id):
 
 
 def get_booking_detail(booking_id):
-    """
-    Retrieve a single booking with customer, worker, category and review info.
-    SQL: SELECT, 3x INNER JOIN, 1x LEFT JOIN, WHERE on primary key
-    """
+    """Fetch full details for a booking including customer, worker, and review info."""
     db = get_db()
     return db.execute("""
         SELECT   b.booking_id,
@@ -641,10 +499,7 @@ def get_booking_detail(booking_id):
 
 
 def cancel_booking(booking_id, customer_id):
-    """
-    Cancel a booking (customer action). Allowed only if PENDING or CONFIRMED.
-    SQL: UPDATE with WHERE on booking_id, customer_id, and allowed status values
-    """
+    """Cancel a booking if it is still PENDING or CONFIRMED."""
     db = get_db()
     db.execute("""
         UPDATE booking
@@ -657,10 +512,7 @@ def cancel_booking(booking_id, customer_id):
 
 
 def get_worker_bookings(worker_id):
-    """
-    Retrieve all bookings assigned to a specific worker.
-    SQL: SELECT, INNER JOIN on customer and category, WHERE, ORDER BY
-    """
+    """Fetch all bookings assigned to a worker."""
     db = get_db()
     return db.execute("""
         SELECT   b.booking_id,
@@ -685,15 +537,7 @@ def get_worker_bookings(worker_id):
 
 
 def update_booking_status(booking_id, worker_id, new_status):
-    """
-    Update a booking's status following valid lifecycle transitions:
-      PENDING    -> CONFIRMED or CANCELLED
-      CONFIRMED  -> IN_PROGRESS or CANCELLED
-      IN_PROGRESS-> COMPLETED
-    When COMPLETED: sets completed_at = CURRENT_TIMESTAMP and fires trigger
-    trg_update_worker_jobs_on_complete (defined in schema_and_seed.sql).
-    SQL: UPDATE with dynamic completed_at and valid-transition WHERE clause
-    """
+    """Update a booking status following the allowed status transitions."""
     ALLOWED_TRANSITIONS = {
         'CONFIRMED':   ['PENDING'],
         'CANCELLED':   ['PENDING', 'CONFIRMED'],
@@ -731,12 +575,10 @@ def update_booking_status(booking_id, worker_id, new_status):
     return cur.rowcount > 0
 
 
-# ============================================================
-# 5. REVIEWS & BADGES
-# ============================================================
+# Reviews and badges
 
 def check_booking_has_review(booking_id):
-    """Check whether a booking already has a review. SQL: SELECT COUNT(*)"""
+    """Check whether a booking already has a review."""
     db = get_db()
     count = db.execute("""
         SELECT COUNT(*) FROM review WHERE booking_id = ?
@@ -745,13 +587,7 @@ def check_booking_has_review(booking_id):
 
 
 def add_review(booking_id, rating, comment=None):
-    """
-    Insert a customer review for an eligible completed booking.
-    Database trigger trg_update_worker_rating_on_review fires AFTER INSERT,
-    automatically updating worker.avg_rating.
-    Enforces UNIQUE(booking_id) constraint.
-    SQL: INSERT INTO review
-    """
+    """Add a customer review for a completed booking."""
     db = get_db()
     cur = db.execute("""
         INSERT INTO review (booking_id, rating, comment)
@@ -762,25 +598,18 @@ def add_review(booking_id, rating, comment=None):
 
 
 def award_eligible_badges(worker_id):
-    """
-    Award any badges a worker has newly qualified for based on completed_jobs.
-    Subquery with NOT EXISTS prevents duplicate badges.
-    SQL: INSERT INTO worker_badge ... SELECT with subqueries and NOT EXISTS
-    """
+    """Award any newly eligible badges based on completed jobs count."""
     db = get_db()
     db.execute("""
-        -- Multi-row INSERT...SELECT with scalar subquery and NOT EXISTS subquery
         INSERT INTO worker_badge (worker_id, badge_id, awarded_date)
         SELECT ?,
                b.badge_id,
                CURRENT_DATE
         FROM   badge b
         WHERE  b.min_jobs_required <= (
-                   -- Scalar subquery: current completed_jobs for this worker
                    SELECT completed_jobs FROM worker WHERE worker_id = ?
                )
           AND  NOT EXISTS (
-                   -- Correlated NOT EXISTS subquery: badge not already awarded
                    SELECT 1 FROM worker_badge wb
                    WHERE  wb.worker_id = ?
                      AND  wb.badge_id  = b.badge_id
@@ -789,36 +618,26 @@ def award_eligible_badges(worker_id):
     db.commit()
 
 
-# ============================================================
-# 6. ADMIN REPORTING & AUDIT VIEWS
-# ============================================================
+# Admin dashboard and reports
 
 def get_admin_dashboard_stats():
-    """
-    Aggregate statistics for the admin dashboard.
-    Demonstrates: COUNT, AVG, MIN, MAX, GROUP BY, HAVING, subqueries,
-    and a 4-table INNER JOIN.
-    """
+    """Aggregate summary metrics and recent activity for the admin dashboard."""
     db = get_db()
     stats = {}
 
-    # -- Basic counts --
     stats['total_customers'] = db.execute("SELECT COUNT(*) FROM customer").fetchone()[0]
     stats['total_workers']   = db.execute("SELECT COUNT(*) FROM worker").fetchone()[0]
     stats['total_bookings']  = db.execute("SELECT COUNT(*) FROM booking").fetchone()[0]
     stats['total_reviews']   = db.execute("SELECT COUNT(*) FROM review").fetchone()[0]
 
-    # -- Average platform rating (AVG aggregate) --
     row = db.execute("SELECT ROUND(AVG(rating), 2) FROM review").fetchone()
     stats['avg_rating'] = row[0] if row[0] is not None else 0.0
     stats['platform_avg_rating'] = stats['avg_rating']
 
-    # -- Hourly rate range (MIN & MAX aggregates) --
     rate_row = db.execute("SELECT MIN(hourly_rate), MAX(hourly_rate) FROM worker_service").fetchone()
     stats['min_rate'] = rate_row[0] if rate_row and rate_row[0] is not None else 0.0
     stats['max_rate'] = rate_row[1] if rate_row and rate_row[1] is not None else 0.0
 
-    # -- Bookings by status: GROUP BY --
     stats['bookings_by_status'] = db.execute("""
         SELECT   status, COUNT(*) AS cnt, COUNT(*) AS count
         FROM     booking
@@ -826,9 +645,7 @@ def get_admin_dashboard_stats():
         ORDER BY cnt DESC
     """).fetchall()
 
-    # -- Popular categories: JOIN, GROUP BY, HAVING, ORDER BY --
     stats['popular_categories'] = db.execute("""
-        -- Demonstrates HAVING clause on aggregated category metrics
         SELECT   c.category_id,
                  c.name,
                  COUNT(DISTINCT ws.worker_id) AS worker_count,
@@ -842,9 +659,7 @@ def get_admin_dashboard_stats():
         ORDER BY booking_count DESC, worker_count DESC
     """).fetchall()
 
-    # -- Top workers: Subquery filter (only workers with reviews) --
     stats['top_workers'] = db.execute("""
-        -- Subquery: only workers who have at least one customer review
         SELECT   w.worker_id,
                  w.first_name || ' ' || w.last_name  AS name,
                  w.city,
@@ -860,7 +675,6 @@ def get_admin_dashboard_stats():
         LIMIT    5
     """).fetchall()
 
-    # -- Most active workers by completed_jobs --
     stats['most_active'] = db.execute("""
         SELECT   w.worker_id,
                  w.first_name || ' ' || w.last_name  AS name,
@@ -872,7 +686,6 @@ def get_admin_dashboard_stats():
         LIMIT    5
     """).fetchall()
 
-    # -- Recent bookings: INNER JOIN across 4 tables --
     stats['recent_bookings'] = db.execute("""
         SELECT   b.booking_id,
                  b.worker_id,
@@ -895,15 +708,9 @@ def get_admin_dashboard_stats():
 
 
 def get_view_worker_stats():
-    """
-    Query the existing v_worker_derived_stats view.
-    The view dynamically recalculates completed_jobs and avg_rating for audit.
-    It can be compared with the trigger-maintained stored values in worker table.
-    SQL: SELECT from an existing VIEW (defined in schema_and_seed.sql)
-    """
+    """Fetch derived worker statistics from the v_worker_derived_stats view."""
     db = get_db()
     return db.execute("""
-        -- Using the database view v_worker_derived_stats
         SELECT   worker_id,
                  worker_name,
                  city,
@@ -916,7 +723,7 @@ def get_view_worker_stats():
 
 
 def get_all_customers_admin():
-    """Retrieve all customers for admin view. SQL: SELECT, ORDER BY"""
+    """Fetch all customers for admin view."""
     db = get_db()
     return db.execute("""
         SELECT  customer_id, first_name, last_name, email,
@@ -927,10 +734,7 @@ def get_all_customers_admin():
 
 
 def get_all_workers_admin():
-    """
-    Retrieve all workers with service counts for admin view.
-    SQL: SELECT, LEFT JOIN, GROUP BY, COUNT aggregate
-    """
+    """Fetch all workers with service counts for admin view."""
     db = get_db()
     return db.execute("""
         SELECT   w.worker_id,
@@ -949,10 +753,7 @@ def get_all_workers_admin():
 
 
 def get_all_bookings_admin():
-    """
-    Retrieve all bookings for admin view.
-    SQL: SELECT, INNER JOIN across 4 tables, ORDER BY
-    """
+    """Fetch all bookings for admin view."""
     db = get_db()
     return db.execute("""
         SELECT   b.booking_id,
