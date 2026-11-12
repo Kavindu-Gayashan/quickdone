@@ -21,9 +21,11 @@
 
 import sys
 import os
+import csv
+import io
 from functools import wraps
 from flask import (Flask, render_template_string, request, redirect,
-                   url_for, session, flash)
+                   url_for, session, flash, Response)
 from werkzeug.security import generate_password_hash, check_password_hash
 
 # Core modular components
@@ -579,6 +581,97 @@ def admin_workers():
 def admin_bookings():
     bookings = q.get_all_bookings_admin()
     return render_template_string(t.ADMIN_BOOKINGS_TEMPLATE, bookings=bookings)
+
+
+# Report and analytics CSV exports
+
+@app.route('/admin/export/workers')
+@login_required_admin
+def admin_export_workers():
+    """Export complete worker details with services, qualifications, and performance metrics as CSV."""
+    workers = q.get_workers_report_data()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        'Worker ID', 'First Name', 'Last Name', 'Full Name', 'Email', 'Phone', 'City',
+        'Experience (Years)', 'Completed Jobs', 'Average Rating', 'Total Reviews',
+        'Total Revenue Earned (LKR)', 'Services Offered & Rates', 'Qualifications',
+        'Availability Slots', 'Badges Earned', 'Portfolio Image Count', 'Registration Date'
+    ])
+    for w in workers:
+        writer.writerow([
+            w['worker_id'], w['first_name'], w['last_name'], w['full_name'], w['email'],
+            w['phone'], w['city'], w['experience_years'], w['completed_jobs'],
+            f"{w['avg_rating']:.2f}", w['total_reviews'], w['total_revenue_earned'],
+            w['services_offered'] or 'None', w['qualifications'] or 'None',
+            w['availability_slots'] or 'None', w['badges_earned'] or 'None',
+            w['portfolio_count'], w['registered_at']
+        ])
+
+    return Response(
+        output.getvalue(),
+        mimetype='text/csv',
+        headers={'Content-Disposition': 'attachment; filename=quickdone_workers_report.csv'}
+    )
+
+
+@app.route('/admin/export/analytics')
+@login_required_admin
+def admin_export_analytics():
+    """Export comprehensive platform analytics including KPIs, category breakdown, status metrics, and bookings."""
+    stats = q.get_admin_dashboard_stats()
+    bookings = q.get_analytics_bookings_data()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    # Platform overview metrics
+    writer.writerow(['QUICKDONE PLATFORM ANALYTICS & OPERATIONS REPORT'])
+    writer.writerow(['Metric', 'Value'])
+    writer.writerow(['Total Customers', stats['total_customers']])
+    writer.writerow(['Total Workers', stats['total_workers']])
+    writer.writerow(['Total Bookings', stats['total_bookings']])
+    writer.writerow(['Total Reviews', stats['total_reviews']])
+    writer.writerow(['Platform Average Rating', f"{stats['platform_avg_rating']:.2f} / 5.00"])
+    writer.writerow(['Hourly Rate Range (LKR)', f"{stats['min_rate']} - {stats['max_rate']}"])
+    writer.writerow([])
+
+    # Category performance analysis
+    writer.writerow(['CATEGORY PERFORMANCE ANALYSIS'])
+    writer.writerow(['Category ID', 'Category Name', 'Active Workers', 'Total Bookings', 'Average Hourly Rate (LKR)'])
+    for cat in stats['popular_categories']:
+        writer.writerow([cat['category_id'], cat['name'], cat['worker_count'], cat['booking_count'], cat['avg_rate']])
+    writer.writerow([])
+
+    # Booking status distribution
+    writer.writerow(['BOOKING STATUS DISTRIBUTION'])
+    writer.writerow(['Status', 'Booking Count'])
+    for sb in stats['bookings_by_status']:
+        writer.writerow([sb['status'], sb['cnt']])
+    writer.writerow([])
+
+    # Detailed bookings and reviews log
+    writer.writerow(['ALL BOOKINGS & CUSTOMER FEEDBACK LOG'])
+    writer.writerow([
+        'Booking ID', 'Customer Name', 'Customer Email', 'Customer Phone',
+        'Worker Name', 'Worker City', 'Category', 'Status', 'Agreed Rate (LKR)',
+        'Scheduled Start', 'Created At', 'Completed At', 'Review Rating (1-5)', 'Review Comment'
+    ])
+    for b in bookings:
+        writer.writerow([
+            b['booking_id'], b['customer_name'], b['customer_email'], b['customer_phone'],
+            b['worker_name'], b['worker_city'], b['category_name'], b['status'],
+            b['agreed_rate'], b['scheduled_start'], b['created_at'], b['completed_at'] or 'N/A',
+            b['review_rating'] if b['review_rating'] is not None else 'Not Reviewed',
+            b['review_comment'] or ''
+        ])
+
+    return Response(
+        output.getvalue(),
+        mimetype='text/csv',
+        headers={'Content-Disposition': 'attachment; filename=quickdone_platform_analytics.csv'}
+    )
 
 
 # ============================================================

@@ -1787,11 +1787,24 @@ ADMIN_DASHBOARD_TEMPLATE = _page('Admin Dashboard', """
       <a href="/admin/customers">👥 Customers</a>
       <a href="/admin/workers">🔧 Workers</a>
       <a href="/admin/bookings">📋 Bookings</a>
+      <div style="height:1px;background:var(--border);margin:8px 0;"></div>
+      <a href="/admin/export/workers">📥 Workers CSV</a>
+      <a href="/admin/export/analytics">📊 Analytics CSV</a>
       <a href="/logout">↩ Log Out</a>
     </nav>
   </div>
   <div class="dash-main">
-    <div class="dash-title">Admin Dashboard</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;flex-wrap:wrap;gap:12px;">
+      <div class="dash-title" style="margin-bottom:0;">Admin Dashboard</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <a href="/admin/export/workers" class="btn btn-outline" style="font-size:13px;padding:8px 14px;display:inline-flex;align-items:center;gap:6px;">
+          📥 Download Workers Report (CSV)
+        </a>
+        <a href="/admin/export/analytics" class="btn btn-p" style="font-size:13px;padding:8px 14px;display:inline-flex;align-items:center;gap:6px;">
+          📊 Download Platform Analytics (CSV)
+        </a>
+      </div>
+    </div>
 
     <!-- KPI ROW -->
     <div class="kpi-row">
@@ -1946,6 +1959,9 @@ ADMIN_CUSTOMERS_TEMPLATE = _page('Customers — Admin', """
       <a href="/admin/customers" class="active">👥 Customers</a>
       <a href="/admin/workers">🔧 Workers</a>
       <a href="/admin/bookings">📋 Bookings</a>
+      <div style="height:1px;background:var(--border);margin:8px 0;"></div>
+      <a href="/admin/export/workers">📥 Workers CSV</a>
+      <a href="/admin/export/analytics">📊 Analytics CSV</a>
       <a href="/logout">↩ Log Out</a>
     </nav>
   </div>
@@ -1989,11 +2005,17 @@ ADMIN_WORKERS_TEMPLATE = _page('Workers — Admin', """
       <a href="/admin/customers">👥 Customers</a>
       <a href="/admin/workers" class="active">🔧 Workers</a>
       <a href="/admin/bookings">📋 Bookings</a>
+      <div style="height:1px;background:var(--border);margin:8px 0;"></div>
+      <a href="/admin/export/workers">📥 Workers CSV</a>
+      <a href="/admin/export/analytics">📊 Analytics CSV</a>
       <a href="/logout">↩ Log Out</a>
     </nav>
   </div>
   <div class="dash-main">
-    <div class="dash-title">Workers ({{ workers|length }})</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+      <div class="dash-title" style="margin-bottom:0;">Workers ({{ workers|length }})</div>
+      <a href="/admin/export/workers" class="btn btn-outline" style="font-size:13px;padding:7px 14px;">📥 Export Workers CSV</a>
+    </div>
     <div class="tw">
       <table>
         <thead><tr>
@@ -2037,11 +2059,17 @@ ADMIN_BOOKINGS_TEMPLATE = _page('Bookings — Admin', """
       <a href="/admin/customers">👥 Customers</a>
       <a href="/admin/workers">🔧 Workers</a>
       <a href="/admin/bookings" class="active">📋 Bookings</a>
+      <div style="height:1px;background:var(--border);margin:8px 0;"></div>
+      <a href="/admin/export/workers">📥 Workers CSV</a>
+      <a href="/admin/export/analytics">📊 Analytics CSV</a>
       <a href="/logout">↩ Log Out</a>
     </nav>
   </div>
   <div class="dash-main">
-    <div class="dash-title">All Bookings ({{ bookings|length }})</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+      <div class="dash-title" style="margin-bottom:0;">All Bookings ({{ bookings|length }})</div>
+      <a href="/admin/export/analytics" class="btn btn-outline" style="font-size:13px;padding:7px 14px;">📊 Export Analytics CSV</a>
+    </div>
     <div class="tw">
       <table>
         <thead><tr>

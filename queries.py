@@ -771,3 +771,113 @@ def get_all_bookings_admin():
         INNER JOIN category   c ON b.category_id = c.category_id
         ORDER BY b.created_at DESC
     """).fetchall()
+
+
+# Report and analytics exports
+
+def get_workers_report_data():
+    """Fetch complete worker details including services, qualifications, badges, and stats for CSV export."""
+    db = get_db()
+    return db.execute("""
+        SELECT
+            w.worker_id,
+            w.first_name,
+            w.last_name,
+            (w.first_name || ' ' || w.last_name) AS full_name,
+            w.email,
+            w.phone,
+            w.city,
+            w.experience_years,
+            w.bio,
+            w.registered_at,
+            w.completed_jobs,
+            w.avg_rating,
+            (
+                SELECT GROUP_CONCAT(c.name || ' (LKR ' || CAST(ws.hourly_rate AS INT) || '/hr)', ' | ')
+                FROM worker_service ws
+                JOIN category c ON ws.category_id = c.category_id
+                WHERE ws.worker_id = w.worker_id
+            ) AS services_offered,
+            (
+                SELECT COUNT(*)
+                FROM worker_service ws
+                WHERE ws.worker_id = w.worker_id
+            ) AS service_count,
+            (
+                SELECT GROUP_CONCAT(q.title || ' [' || q.institution || ', ' || q.year_obtained || ']', ' | ')
+                FROM qualification q
+                WHERE q.worker_id = w.worker_id
+            ) AS qualifications,
+            (
+                SELECT COUNT(*)
+                FROM qualification q
+                WHERE q.worker_id = w.worker_id
+            ) AS qualification_count,
+            (
+                SELECT GROUP_CONCAT(a.day_of_week || ' (' || a.start_time || '-' || a.end_time || ')', ' | ')
+                FROM availability a
+                WHERE a.worker_id = w.worker_id
+            ) AS availability_slots,
+            (
+                SELECT GROUP_CONCAT(b.name, ', ')
+                FROM worker_badge wb
+                JOIN badge b ON wb.badge_id = b.badge_id
+                WHERE wb.worker_id = w.worker_id
+            ) AS badges_earned,
+            (
+                SELECT COUNT(*)
+                FROM worker_badge wb
+                WHERE wb.worker_id = w.worker_id
+            ) AS badge_count,
+            (
+                SELECT COUNT(*)
+                FROM worker_portfolio wp
+                WHERE wp.worker_id = w.worker_id
+            ) AS portfolio_count,
+            (
+                SELECT COUNT(*)
+                FROM booking bk
+                WHERE bk.worker_id = w.worker_id
+            ) AS total_bookings_assigned,
+            (
+                SELECT COUNT(*)
+                FROM review r
+                JOIN booking bk ON r.booking_id = bk.booking_id
+                WHERE bk.worker_id = w.worker_id
+            ) AS total_reviews,
+            (
+                SELECT COALESCE(SUM(bk.agreed_rate), 0)
+                FROM booking bk
+                WHERE bk.worker_id = w.worker_id AND bk.status = 'COMPLETED'
+            ) AS total_revenue_earned
+        FROM worker w
+        ORDER BY w.worker_id ASC
+    """).fetchall()
+
+
+def get_analytics_bookings_data():
+    """Fetch all bookings with customer, worker, category, and review details for CSV export."""
+    db = get_db()
+    return db.execute("""
+        SELECT
+            b.booking_id,
+            (cu.first_name || ' ' || cu.last_name) AS customer_name,
+            cu.email AS customer_email,
+            cu.phone AS customer_phone,
+            (w.first_name || ' ' || w.last_name) AS worker_name,
+            w.city AS worker_city,
+            c.name AS category_name,
+            b.status,
+            b.agreed_rate,
+            b.scheduled_start,
+            b.created_at,
+            b.completed_at,
+            r.rating AS review_rating,
+            r.comment AS review_comment
+        FROM booking b
+        INNER JOIN customer cu ON b.customer_id = cu.customer_id
+        INNER JOIN worker w ON b.worker_id = w.worker_id
+        INNER JOIN category c ON b.category_id = c.category_id
+        LEFT JOIN review r ON b.booking_id = r.booking_id
+        ORDER BY b.booking_id ASC
+    """).fetchall()
